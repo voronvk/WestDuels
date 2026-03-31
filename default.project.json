@@ -26,6 +26,9 @@
     "StarterGui": {
       "LobbyGui": {
         "$path": "src/gui/LobbyGui"
+      },
+      "GameGui": {
+        "$path": "src/gui/GameGui"
       }
     },
 
