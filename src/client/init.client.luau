@@ -70,3 +70,20 @@ task.spawn(function()
 		end)
 	end)
 end)
+
+-- Quest completion sound
+task.spawn(function()
+	local shared = ReplicatedStorage:WaitForChild("Shared")
+	local remotes = shared:WaitForChild("Remotes")
+	local ev = remotes:WaitForChild("QuestComplete") :: RemoteEvent
+	local claimSound = (ReplicatedStorage:WaitForChild("Sounds"):WaitForChild("Claim")) :: Sound
+
+	ev.OnClientEvent:Connect(function()
+		local s = claimSound:Clone()
+		s.Parent = SoundService
+		s:Play()
+		s.Ended:Connect(function()
+			s:Destroy()
+		end)
+	end)
+end)

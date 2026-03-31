@@ -3,6 +3,8 @@ local MarketplaceService = game:GetService("MarketplaceService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local QuestService = require(script.Parent:WaitForChild("QuestService"))
+local BestTimeService = require(script.Parent:WaitForChild("BestTimeService"))
+local StreakService = require(script.Parent:WaitForChild("StreakService"))
 
 local GAMES_FOLDER_NAME = "Games"
 local GAME_MODEL_NAME = "Game"
@@ -216,6 +218,8 @@ local function endMatch(match: MatchRuntime, winner: Player, loser: Player)
 
 	-- Quest progress
 	QuestService.OnGameWin(winner)
+	StreakService.ReportMatchWin(winner)
+	StreakService.ReportMatchLoss(loser)
 
 	winner:SetAttribute(PLAYER_INMATCH_ATTR, false)
 	loser:SetAttribute(PLAYER_INMATCH_ATTR, false)
@@ -734,6 +738,7 @@ evMatchClick.OnServerEvent:Connect(function(player: Player, matchId: string, cli
 
 	-- Quest progress (round winner)
 	QuestService.OnRoundWin(player)
+	BestTimeService.ReportTime(player, reactionTime)
 
 	-- Record round times (store -1 for no-shot)
 	local roundIndex = math.clamp(match.roundNumber, 1, 3)
@@ -784,6 +789,27 @@ evClaimReward.OnServerEvent:Connect(function(player: Player, matchId: string, mo
 end)
 
 MarketplaceService.ProcessReceipt = function(receiptInfo)
+	-- Coins bundles devproducts
+	do
+		local coinAmountByProductId = {
+			[3567401315] = 150, -- CoinBundle
+			[3567401728] = 500, -- MegaCoinBundle
+			[3567401813] = 2750, -- SuperCoinBundle
+			[3567401947] = 8000, -- UltraCoin
+			[3567402052] = 30000, -- LegendaryCoin
+		}
+		local amount = coinAmountByProductId[receiptInfo.ProductId]
+		if amount then
+			local player = Players:GetPlayerByUserId(receiptInfo.PlayerId)
+			if not player then
+				return Enum.ProductPurchaseDecision.NotProcessedYet
+			end
+			giveCash(player, amount)
+			evRobuxPurchase:FireClient(player)
+			return Enum.ProductPurchaseDecision.PurchaseGranted
+		end
+	end
+
 	-- Double reward product
 	if receiptInfo.ProductId == DEVPRODUCT_DOUBLE_ID then
 		local player = Players:GetPlayerByUserId(receiptInfo.PlayerId)

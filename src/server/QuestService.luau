@@ -30,6 +30,7 @@ local function getOrCreateRemote(name: string): RemoteEvent
 end
 
 local evQuestSync = getOrCreateRemote("QuestSync")
+local evQuestComplete = getOrCreateRemote("QuestComplete")
 
 export type QuestType = "play_minutes" | "win_rounds" | "win_games" | "earn_coins"
 
@@ -196,6 +197,9 @@ local function grantIfComplete(player: Player, q: Quest)
 			cash.Value += q.reward
 		end
 	end
+
+	-- client feedback (sound/UI)
+	evQuestComplete:FireClient(player, q.qtype, q.reward)
 end
 
 local function clampProgress(q: Quest)

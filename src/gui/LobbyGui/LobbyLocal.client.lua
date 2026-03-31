@@ -97,13 +97,29 @@ end
 
 -- --- Leaderstats (Cash/Wins) ---
 local function bindLabelToValue(label, valueObj)
-	label.Text = tostring(valueObj.Value)
-	local animToken = 0
-	local lastValue = tonumber(valueObj.Value) or 0
+	local function formatShort(n: number): string
+		local abs = math.abs(n)
+		if abs >= 1_000_000_000 then
+			local v = n / 1_000_000_000
+			return string.format("%.1fB", v):gsub("%.0B$", "B")
+		elseif abs >= 1_000_000 then
+			local v = n / 1_000_000
+			return string.format("%.1fM", v):gsub("%.0M$", "M")
+		elseif abs >= 1_000 then
+			local v = n / 1_000
+			return string.format("%.1fk", v):gsub("%.0k$", "k")
+		else
+			return tostring(math.floor(n + 0.5))
+		end
+	end
 
 	local function setText(v: number)
-		label.Text = tostring(math.floor(v + 0.5))
+		label.Text = formatShort(v)
 	end
+
+	setText(tonumber(valueObj.Value) or 0)
+	local animToken = 0
+	local lastValue = tonumber(valueObj.Value) or 0
 
 	local function animateTo(newValue: number)
 		animToken += 1
@@ -133,7 +149,7 @@ local function bindLabelToValue(label, valueObj)
 			animateTo(newValue)
 		else
 			animToken += 1
-			label.Text = tostring(newValue)
+			setText(newValue)
 			lastValue = newValue
 		end
 	end)
@@ -253,6 +269,7 @@ end)
 -- UI layout refs (para tweens al abrir/cerrar)
 local leftFrame = waitPath(lobbyGui, "Left")
 local bottomFrame = waitPath(lobbyGui, "Bottom")
+local rightFrame = waitPath(lobbyGui, "Right")
 local backGround = waitPath(lobbyGui, "BackGround")
 
 local lighting = game:GetService("Lighting")
@@ -264,6 +281,7 @@ local initialFov = camera and camera.FieldOfView or 70
 -- Guardar estado inicial para poder revertir al cerrar
 local initialLeftPos = leftFrame.Position
 local initialBottomPos = bottomFrame.Position
+local initialRightPos = rightFrame.Position
 
 local function syncBottomUnlocked()
 	-- Default: visible unless server explicitly locks it
@@ -343,6 +361,13 @@ local function setShopVisible(visible)
 			initialBottomPos.Y.Offset + bottomFrame.AbsoluteSize.Y + 20
 		)
 
+		local rightExitPos = UDim2.new(
+			initialRightPos.X.Scale,
+			initialRightPos.X.Offset + rightFrame.AbsoluteSize.X + 20,
+			initialRightPos.Y.Scale,
+			initialRightPos.Y.Offset
+		)
+
 		local tweens = {}
 		table.insert(tweens, TweenService:Create(shopScale, tweenInfo, { Scale = shopOpenTo }))
 		if camera then
@@ -356,12 +381,25 @@ local function setShopVisible(visible)
 		end
 		table.insert(tweens, TweenService:Create(leftFrame, tweenInfo, { Position = leftExitPos }))
 		table.insert(tweens, TweenService:Create(bottomFrame, tweenInfo, { Position = bottomExitPos }))
+		table.insert(tweens, TweenService:Create(rightFrame, tweenInfo, { Position = rightExitPos }))
 
 		activeShopTweens = tweens
 
 		for _, tw in ipairs(tweens) do
 			tw:Play()
 		end
+		-- Hide frames after the open tween so they fully disappear.
+		task.delay(shopDuration, function()
+			if thisAnimId ~= shopAnimId then
+				return
+			end
+			-- Only hide if still open
+			if shopOpen then
+				leftFrame.Visible = false
+				bottomFrame.Visible = false
+				rightFrame.Visible = false
+			end
+		end)
 		-- No esperamos a Completed: si durante esto se cierra, la cancelación evita races.
 	else
 		-- Cancelar tweens del "abrir" para que el cierre sea inmediato.
@@ -373,8 +411,12 @@ local function setShopVisible(visible)
 		-- Cierre inmediato (sin tween): solo OFF y revertir estado visual.
 		shopFrame.Visible = false
 		shopScale.Scale = shopCloseTo
+		leftFrame.Visible = true
+		bottomFrame.Visible = true
+		rightFrame.Visible = true
 		leftFrame.Position = initialLeftPos
 		bottomFrame.Position = initialBottomPos
+		rightFrame.Position = initialRightPos
 		if backGround then
 			backGround.BackgroundTransparency = 1
 		end
@@ -608,6 +650,73 @@ wireTopButton(coinsButton, "Coins")
 wireTopButton(featuredButton, "Featured")
 wireTopButton(passesButton, "Passes")
 wireTopButton(casesButton, "Cases")
+
+-- --- Devproducts (Coins bundles) ---
+do
+	local coinsScrolling = waitPath(centerFrame, "CoinsScrolling")
+
+	local productIdByButtonName = {
+		CoinBundle = 3567401315,
+		MegaCoinBundle = 3567401728,
+		SuperCoinBundle = 3567401813,
+		UltraCoin = 3567401947,
+		LegendaryCoin = 3567402052,
+	}
+
+	local function wireDevProductButton(btn: Instance, productId: number)
+		if not btn:IsA("GuiButton") then
+			return
+		end
+		btn.Activated:Connect(function()
+			MarketplaceService:PromptProductPurchase(localPlayer, productId)
+		end)
+	end
+
+	local function wireWithin(root: Instance)
+		for _, inst in ipairs(root:GetDescendants()) do
+			if inst:IsA("GuiButton") then
+				local pid = productIdByButtonName[inst.Name]
+				if pid then
+					wireDevProductButton(inst, pid)
+				end
+			end
+		end
+	end
+
+	local list1 = coinsScrolling:FindFirstChild("List")
+	local list2 = coinsScrolling:FindFirstChild("List2")
+	if list1 then
+		wireWithin(list1)
+	end
+	if list2 then
+		wireWithin(list2)
+	end
+	if not list1 and not list2 then
+		-- fallback in case the hierarchy changes
+		wireWithin(coinsScrolling)
+	end
+
+	-- Close Shop when purchase finishes (user hit OK/Close in Roblox prompt)
+	MarketplaceService.PromptProductPurchaseFinished:Connect(function(player: Player, productId: number, wasPurchased: boolean)
+		if player ~= localPlayer then
+			return
+		end
+		if wasPurchased then
+			-- If receipt is granted, server will also fire RobuxPurchase (sound).
+			setShopVisible(false)
+		end
+	end)
+
+	-- More reliable: close shop when server confirms any devproduct receipt.
+	do
+		local shared = ReplicatedStorage:WaitForChild("Shared")
+		local remotes = shared:WaitForChild("Remotes")
+		local evRobuxPurchase = remotes:WaitForChild("RobuxPurchase") :: RemoteEvent
+		evRobuxPurchase.OnClientEvent:Connect(function()
+			setShopVisible(false)
+		end)
+	end
+end
 
 -- --- Start ---
 bindLeaderstats()
